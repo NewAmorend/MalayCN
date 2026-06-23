@@ -38,6 +38,16 @@ python -m src.malaycn.translate \
   --text "terima kasih"
 ```
 
+也可以启动 Tkinter 桌面界面：
+
+```bash
+python -m src.malaycn.gui
+```
+
+界面启动后选择训练输出目录，例如 `artifacts/malaycn-demo` 或 `artifacts/malaycn`，点击“加载模型”，再输入马来语文本进行翻译。
+
+如果启动时报 `_tkinter` 缺失，说明当前 Python 没有图形界面支持。换用 python.org 安装包、Conda/Miniforge，或安装当前 Python 对应版本的 `python-tk` 即可。
+
 ## 3. 真实训练数据格式
 
 准备一个 UTF-8 TSV 文件，至少包含两列：
@@ -100,4 +110,3 @@ python scripts/parallel_to_tsv.py \
 ## 6. 当前实现边界
 
 这个项目是教学和原型实现，重点是让你拥有完整训练链路。中文默认按字切分，马来语默认按词切分；真实生产效果通常建议改成 SentencePiece/BPE 子词分词，并加入更严格的数据清洗和 BLEU/COMET 评估。
-
