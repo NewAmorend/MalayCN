@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
 import queue
 import sys
 import threading
-from pathlib import Path
 
 try:
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import messagebox, ttk
 except ModuleNotFoundError as exc:
     if exc.name != "_tkinter":
         raise
@@ -19,6 +17,8 @@ except ModuleNotFoundError as exc:
     )
     raise SystemExit(1) from exc
 
+from .pretrained import DEFAULT_MODEL_NAME, M2M100Translator
+
 
 class TranslatorApp(tk.Tk):
     def __init__(self):
@@ -27,20 +27,16 @@ class TranslatorApp(tk.Tk):
         self.geometry("820x560")
         self.minsize(720, 500)
 
-        self.translator = None
+        self.translator: M2M100Translator | None = None
         self.worker_queue: queue.Queue[tuple[str, str]] = queue.Queue()
 
-        self.checkpoint_var = tk.StringVar(value=self._default_checkpoint_dir())
-        self.status_var = tk.StringVar(value="请选择训练输出目录并加载模型")
+        self.model_name_var = tk.StringVar(value=DEFAULT_MODEL_NAME)
+        self.source_lang_var = tk.StringVar(value="ms")
+        self.target_lang_var = tk.StringVar(value="zh")
+        self.status_var = tk.StringVar(value="点击加载模型。首次运行会从 Hugging Face 下载模型。")
 
         self._build_ui()
         self._poll_worker_queue()
-
-    def _default_checkpoint_dir(self) -> str:
-        for path in ("artifacts/malaycn", "artifacts/malaycn-demo"):
-            if Path(path).exists():
-                return path
-        return "artifacts/malaycn-demo"
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -50,13 +46,19 @@ class TranslatorApp(tk.Tk):
         top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(1, weight=1)
 
-        ttk.Label(top, text="模型目录").grid(row=0, column=0, sticky="w")
-        checkpoint_entry = ttk.Entry(top, textvariable=self.checkpoint_var)
-        checkpoint_entry.grid(row=0, column=1, sticky="ew", padx=(10, 8))
+        ttk.Label(top, text="模型").grid(row=0, column=0, sticky="w")
+        model_entry = ttk.Entry(top, textvariable=self.model_name_var)
+        model_entry.grid(row=0, column=1, sticky="ew", padx=(10, 8))
 
-        ttk.Button(top, text="选择", command=self.choose_checkpoint_dir).grid(row=0, column=2)
+        lang_frame = ttk.Frame(top)
+        lang_frame.grid(row=0, column=2, sticky="e", padx=(0, 8))
+        ttk.Label(lang_frame, text="源").grid(row=0, column=0)
+        ttk.Entry(lang_frame, width=5, textvariable=self.source_lang_var).grid(row=0, column=1, padx=(4, 8))
+        ttk.Label(lang_frame, text="目标").grid(row=0, column=2)
+        ttk.Entry(lang_frame, width=5, textvariable=self.target_lang_var).grid(row=0, column=3, padx=(4, 0))
+
         self.load_button = ttk.Button(top, text="加载模型", command=self.load_model)
-        self.load_button.grid(row=0, column=3, padx=(8, 0))
+        self.load_button.grid(row=0, column=3)
 
         body = ttk.Frame(self, padding=(16, 0, 16, 8))
         body.grid(row=1, column=0, sticky="nsew")
@@ -85,33 +87,32 @@ class TranslatorApp(tk.Tk):
         status = ttk.Label(self, textvariable=self.status_var, anchor="w", padding=(16, 0, 16, 12))
         status.grid(row=3, column=0, sticky="ew")
 
-    def choose_checkpoint_dir(self) -> None:
-        selected = filedialog.askdirectory(title="选择训练输出目录")
-        if selected:
-            self.checkpoint_var.set(selected)
-            self.translator = None
-            self.status_var.set("模型目录已更新，请重新加载模型")
-
     def load_model(self) -> None:
-        checkpoint_dir = self.checkpoint_var.get().strip()
-        if not checkpoint_dir:
-            messagebox.showwarning("缺少模型目录", "请先选择训练输出目录。")
+        model_name = self.model_name_var.get().strip()
+        source_lang = self.source_lang_var.get().strip()
+        target_lang = self.target_lang_var.get().strip()
+
+        if not model_name or not source_lang or not target_lang:
+            messagebox.showwarning("缺少配置", "请填写模型名、源语言代码和目标语言代码。")
             return
 
-        self._set_busy(True, "正在加载模型...")
-        threading.Thread(target=self._load_model_worker, args=(checkpoint_dir,), daemon=True).start()
+        self._set_busy(True, "正在加载模型，首次运行可能需要下载几 GB 权重...")
+        threading.Thread(
+            target=self._load_model_worker,
+            args=(model_name, source_lang, target_lang),
+            daemon=True,
+        ).start()
 
-    def _load_model_worker(self, checkpoint_dir: str) -> None:
+    def _load_model_worker(self, model_name: str, source_lang: str, target_lang: str) -> None:
         try:
-            self.translator = LoadedTranslator(Path(checkpoint_dir))
+            self.translator = M2M100Translator(
+                model_name=model_name,
+                source_lang=source_lang,
+                target_lang=target_lang,
+            )
             self.worker_queue.put(("loaded", "模型加载完成，可以开始翻译"))
         except ModuleNotFoundError as exc:
-            if exc.name == "tensorflow":
-                self.worker_queue.put(("error", "当前环境未安装 TensorFlow，请先执行 pip install -r requirements.txt"))
-            else:
-                self.worker_queue.put(("error", f"缺少依赖: {exc.name}"))
-        except FileNotFoundError as exc:
-            self.worker_queue.put(("error", f"模型文件不存在: {exc.filename}"))
+            self.worker_queue.put(("error", f"缺少依赖: {exc.name}。请先执行 pip install -r requirements.txt"))
         except Exception as exc:
             self.worker_queue.put(("error", f"模型加载失败: {exc}"))
 
@@ -134,10 +135,12 @@ class TranslatorApp(tk.Tk):
             if self.load_button["state"] == "disabled":
                 self.after(300, lambda: self._translate_after_loading(text))
             return
-        self.translate_text()
+        self._set_busy(True, "正在翻译...")
+        threading.Thread(target=self._translate_worker, args=(text,), daemon=True).start()
 
     def _translate_worker(self, text: str) -> None:
         try:
+            assert self.translator is not None
             result = self.translator.translate(text)
             self.worker_queue.put(("translated", result))
         except Exception as exc:
@@ -178,46 +181,6 @@ class TranslatorApp(tk.Tk):
         self.status_var.set("已清空")
 
 
-class LoadedTranslator:
-    def __init__(self, checkpoint_dir: Path):
-        import tensorflow as tf
-
-        from .model import MalayChineseTransformer
-        from .translate import build_vectorizer
-
-        self.tf = tf
-        self.checkpoint_dir = checkpoint_dir
-        config_path = checkpoint_dir / "config.json"
-        vocab_path = checkpoint_dir / "vocab.json"
-        weights_path = checkpoint_dir / "model.weights.h5"
-
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        vocab = json.loads(vocab_path.read_text(encoding="utf-8"))
-
-        self.max_target_len = config["max_target_len"]
-        self.source_vectorizer = build_vectorizer(vocab["source"], config["max_source_len"])
-        self.target_vectorizer = build_vectorizer(vocab["target"], config["target_vectorize_len"])
-        self.target_index_lookup = dict(enumerate(vocab["target"]))
-
-        self.model = MalayChineseTransformer(**config)
-        dummy_source = tf.zeros((1, config["max_source_len"]), dtype=tf.int64)
-        dummy_target = tf.zeros((1, config["max_target_len"]), dtype=tf.int64)
-        self.model([dummy_source, dummy_target], training=False)
-        self.model.load_weights(str(weights_path))
-
-    def translate(self, text: str) -> str:
-        from .translate import translate
-
-        return translate(
-            text,
-            self.model,
-            self.source_vectorizer,
-            self.target_vectorizer,
-            self.target_index_lookup,
-            max_decoded_len=self.max_target_len,
-        )
-
-
 def main():
     app = TranslatorApp()
     app.mainloop()
@@ -225,3 +188,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

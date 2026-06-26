@@ -1,6 +1,8 @@
-# MalayCN: TensorFlow 马来语 -> 中文翻译模型
+# MalayCN: 马来语 -> 中文翻译
 
-这是一个可直接训练的 TensorFlow 机器翻译最小项目，默认方向是 `ms -> zh`。模型采用 Transformer encoder-decoder，数据格式使用最简单的 TSV：
+这是一个马来语到中文翻译小项目。默认推理链路直接使用 Hugging Face 预训练模型 [`facebook/m2m100_418M`](https://huggingface.co/facebook/m2m100_418M)，语言方向是 `ms -> zh`。
+
+仓库里也保留了一个 TensorFlow Transformer 训练版本，方便学习机器翻译完整训练流程。训练数据格式使用最简单的 TSV：
 
 ```text
 ms	zh
@@ -16,9 +18,45 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-如果你在 Apple Silicon 上遇到 TensorFlow 安装问题，可以优先使用 Miniforge/Conda 的 Python 3.10 或 3.11 环境。
+默认依赖只包含预训练翻译所需的 `torch`、`transformers` 和 `sentencepiece`。如果你还想跑 TensorFlow 自训练版本，建议使用 Python 3.10 或 3.11；Apple Silicon 上可以优先使用 Miniforge/Conda 环境，然后额外安装：
 
-## 2. 快速跑通
+```bash
+pip install -r requirements-train.txt
+```
+
+## 2. 直接使用预训练模型
+
+完整使用说明见 [USAGE.md](USAGE.md)。
+
+命令行翻译：
+
+```bash
+python -m src.malaycn.translate --text "terima kasih"
+```
+
+第一次运行会下载 `facebook/m2m100_418M` 模型权重，后续会复用本地缓存。
+
+也可以指定模型和语言代码：
+
+```bash
+python -m src.malaycn.translate \
+  --model-name facebook/m2m100_418M \
+  --source-lang ms \
+  --target-lang zh \
+  --text "terima kasih"
+```
+
+也可以启动 Tkinter 桌面界面：
+
+```bash
+python -m src.malaycn.gui
+```
+
+界面启动后点击“加载模型”，再输入马来语文本进行翻译。默认模型是 `facebook/m2m100_418M`，源语言代码是 `ms`，目标语言代码是 `zh`。
+
+如果启动时报 `_tkinter` 缺失，说明当前 Python 没有图形界面支持。换用 python.org 安装包、Conda/Miniforge，或安装当前 Python 对应版本的 `python-tk` 即可。
+
+## 3. 可选：训练自己的 TensorFlow 模型
 
 仓库内带了一个很小的样例数据，只用于验证流程，不适合训练可用模型：
 
@@ -30,25 +68,9 @@ python -m src.malaycn.train \
   --batch-size 8
 ```
 
-训练完成后推理：
+训练完成后，如果你需要使用旧的 TensorFlow checkpoint，可以在代码里调用 `src.malaycn.translate.load_tensorflow_checkpoint` 和 `src.malaycn.translate.translate_tensorflow_checkpoint`。
 
-```bash
-python -m src.malaycn.translate \
-  --checkpoint-dir artifacts/malaycn-demo \
-  --text "terima kasih"
-```
-
-也可以启动 Tkinter 桌面界面：
-
-```bash
-python -m src.malaycn.gui
-```
-
-界面启动后选择训练输出目录，例如 `artifacts/malaycn-demo` 或 `artifacts/malaycn`，点击“加载模型”，再输入马来语文本进行翻译。
-
-如果启动时报 `_tkinter` 缺失，说明当前 Python 没有图形界面支持。换用 python.org 安装包、Conda/Miniforge，或安装当前 Python 对应版本的 `python-tk` 即可。
-
-## 3. 真实训练数据格式
+## 4. 真实训练数据格式
 
 准备一个 UTF-8 TSV 文件，至少包含两列：
 
@@ -75,7 +97,7 @@ python -m src.malaycn.train \
   --num-heads 8
 ```
 
-## 4. 推荐可用数据集
+## 5. 推荐可用数据集
 
 优先建议使用 OPUS，因为它聚合了大量公开平行语料，且支持按语言对下载：
 
@@ -89,7 +111,7 @@ python -m src.malaycn.train \
 2. **再加入 OpenSubtitles / CCMatrix / NLLB 扩量**：量更大，但要做去重、长度过滤和质量过滤。
 3. **最终按领域清洗**：如果你要翻译旅游、教育、客服或政务内容，最好额外收集对应领域的 `ms-zh` 平行句对微调。
 
-## 5. 数据清洗建议
+## 6. 数据清洗建议
 
 最低限度建议：
 
@@ -107,6 +129,6 @@ python scripts/parallel_to_tsv.py \
   --output-file data/train_ms_zh.tsv
 ```
 
-## 6. 当前实现边界
+## 7. 当前实现边界
 
-这个项目是教学和原型实现，重点是让你拥有完整训练链路。中文默认按字切分，马来语默认按词切分；真实生产效果通常建议改成 SentencePiece/BPE 子词分词，并加入更严格的数据清洗和 BLEU/COMET 评估。
+默认可用版本走 M2M100 预训练模型，适合直接做原型。TensorFlow 自训练版本是教学和实验实现，重点是让你拥有完整训练链路；中文默认按字切分，马来语默认按词切分。真实生产效果通常建议继续做领域数据微调、质量评估和异常输入处理。
