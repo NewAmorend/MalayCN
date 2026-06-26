@@ -28,6 +28,8 @@ pip install -r requirements-train.txt
 
 完整使用说明见 [USAGE.md](USAGE.md)。
 
+The static front-end demo is available at [frontend/index.html](frontend/index.html). It shows simulated training curves and a neural network visualization for presentation purposes.
+
 命令行翻译：
 
 ```bash
