@@ -36,15 +36,18 @@ const networkCanvas = document.getElementById("networkCanvas");
 const pulseButton = document.getElementById("pulseButton");
 
 let pulseStart = performance.now();
+let networkAnimationFrame = null;
 
 function setupCanvas(canvas) {
   const rect = canvas.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.floor(rect.width * ratio));
-  canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+  const width = Math.max(320, rect.width || Number(canvas.getAttribute("width")) || 960);
+  const height = Math.max(260, rect.height || Number(canvas.getAttribute("height")) || 420);
+  canvas.width = Math.floor(width * ratio);
+  canvas.height = Math.floor(height * ratio);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  return { ctx, width: rect.width, height: rect.height };
+  return { ctx, width, height };
 }
 
 function drawTrainingChart() {
@@ -180,7 +183,7 @@ function drawNetwork() {
   drawNodes(ctx, nodes, pulse);
   drawLayerLabels(ctx, layers, left, layerGap, bottom);
 
-  requestAnimationFrame(drawNetwork);
+  networkAnimationFrame = requestAnimationFrame(drawNetwork);
 }
 
 function drawConnections(ctx, nodes, pulse) {
@@ -230,14 +233,19 @@ function drawLayerLabels(ctx, layers, left, layerGap, bottom) {
 }
 
 function redraw() {
+  if (!chartCanvas || !networkCanvas || !pulseButton) return;
+  if (networkAnimationFrame) cancelAnimationFrame(networkAnimationFrame);
   drawTrainingChart();
   drawNetwork();
 }
 
-window.addEventListener("resize", drawTrainingChart);
-pulseButton.addEventListener("click", () => {
+window.addEventListener("resize", redraw);
+pulseButton?.addEventListener("click", () => {
   pulseStart = performance.now();
 });
 
-redraw();
-
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", redraw);
+} else {
+  redraw();
+}
